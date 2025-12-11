@@ -15,23 +15,22 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useOrders } from "@/contexts/OrderContext";
-import { OrderStatus, BUSINESS_INFO } from "@/data/menu";
+import { useOrders, OrderStatus } from "@/contexts/OrderContext";
+import { BUSINESS_INFO } from "@/data/menu";
 
-const steps: { status: OrderStatus; label: string; icon: React.ReactNode }[] = [
+const steps: { status: string; label: string; icon: React.ReactNode }[] = [
   { status: "pending", label: "Pedido Recebido", icon: <Clock className="w-5 h-5" /> },
   { status: "preparing", label: "Em Preparo", icon: <ChefHat className="w-5 h-5" /> },
   { status: "ready", label: "Pronto", icon: <Package className="w-5 h-5" /> },
-  { status: "delivery", label: "Saiu para Entrega", icon: <Truck className="w-5 h-5" /> },
-  { status: "completed", label: "Entregue", icon: <Check className="w-5 h-5" /> },
+  { status: "delivered", label: "Saiu para Entrega", icon: <Truck className="w-5 h-5" /> },
 ];
 
-const statusOrder: Record<OrderStatus, number> = {
+const statusOrder: Record<string, number> = {
   pending: 0,
   preparing: 1,
   ready: 2,
-  delivery: 3,
-  completed: 4,
+  delivered: 3,
+  cancelled: -1,
 };
 
 const Acompanhar = () => {
@@ -65,7 +64,7 @@ const Acompanhar = () => {
     );
   }
 
-  const currentStep = statusOrder[order.status];
+  const currentStep = statusOrder[order.status] ?? 0;
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -82,16 +81,15 @@ const Acompanhar = () => {
           </Link>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Tracking */}
             <div className="lg:col-span-2">
               <div className="bg-card rounded-xl border border-border p-6 mb-6">
                 <div className="flex items-center justify-between mb-6">
                   <div>
                     <h1 className="text-2xl font-bold text-foreground">
-                      Pedido {order.id}
+                      Pedido #{order.id.slice(0, 8)}
                     </h1>
                     <p className="text-sm text-muted-foreground">
-                      {new Date(order.createdAt).toLocaleDateString("pt-BR", {
+                      {new Date(order.created_at).toLocaleDateString("pt-BR", {
                         day: "2-digit",
                         month: "long",
                         year: "numeric",
@@ -100,28 +98,16 @@ const Acompanhar = () => {
                       })}
                     </p>
                   </div>
-                  <Badge
-                    variant={
-                      order.status === "preparing"
-                        ? "preparing"
-                        : order.status === "ready"
-                        ? "ready"
-                        : order.status === "delivery" || order.status === "completed"
-                        ? "delivery"
-                        : "outline"
-                    }
-                    className="text-sm px-3 py-1"
-                  >
-                    {steps[currentStep]?.label}
+                  <Badge variant="outline" className="text-sm px-3 py-1">
+                    {steps[Math.max(0, currentStep)]?.label || order.status}
                   </Badge>
                 </div>
 
-                {/* Progress Steps */}
                 <div className="relative">
                   <div className="absolute left-[22px] top-0 bottom-0 w-1 bg-muted rounded-full" />
                   <div
                     className="absolute left-[22px] top-0 w-1 bg-primary rounded-full transition-all duration-500"
-                    style={{ height: `${(currentStep / (steps.length - 1)) * 100}%` }}
+                    style={{ height: `${(Math.max(0, currentStep) / (steps.length - 1)) * 100}%` }}
                   />
 
                   <div className="space-y-8">
@@ -141,17 +127,11 @@ const Acompanhar = () => {
                             {step.icon}
                           </div>
                           <div>
-                            <p
-                              className={`font-medium ${
-                                isCompleted ? "text-foreground" : "text-muted-foreground"
-                              }`}
-                            >
+                            <p className={`font-medium ${isCompleted ? "text-foreground" : "text-muted-foreground"}`}>
                               {step.label}
                             </p>
-                            {isCurrent && order.status !== "completed" && (
-                              <p className="text-sm text-primary animate-pulse">
-                                Status atual
-                              </p>
+                            {isCurrent && order.status !== "delivered" && (
+                              <p className="text-sm text-primary animate-pulse">Status atual</p>
                             )}
                           </div>
                         </div>
@@ -161,46 +141,20 @@ const Acompanhar = () => {
                 </div>
               </div>
 
-              {/* Order Items */}
               <div className="bg-card rounded-xl border border-border p-6">
-                <h2 className="text-lg font-semibold text-foreground mb-4">
-                  Itens do Pedido
-                </h2>
+                <h2 className="text-lg font-semibold text-foreground mb-4">Itens do Pedido</h2>
                 <div className="space-y-3">
                   {order.items.map((item, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg"
-                    >
-                      <img
-                        src={item.menuItem.image}
-                        alt={item.menuItem.name}
-                        className="w-16 h-16 rounded-lg object-cover"
-                      />
+                    <div key={index} className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
                       <div className="flex-1">
                         <p className="font-medium text-foreground">
-                          {item.flavors
-                            ? item.flavors.map((f) => f.name).join(" / ")
-                            : item.menuItem.name}
+                          {item.flavors ? item.flavors.map((f: any) => f.name).join(" / ") : item.menuItem?.name || "Item"}
                         </p>
-                        {item.size && (
-                          <p className="text-sm text-muted-foreground">
-                            {item.size.name}
-                          </p>
-                        )}
-                        {item.stuffedCrust && (
-                          <p className="text-xs text-muted-foreground">
-                            {item.stuffedCrust.name}
-                          </p>
-                        )}
+                        {item.size && <p className="text-sm text-muted-foreground">{item.size.name}</p>}
                       </div>
                       <div className="text-right">
-                        <p className="font-semibold text-foreground">
-                          {item.quantity}x
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          R$ {item.totalPrice.toFixed(2).replace(".", ",")}
-                        </p>
+                        <p className="font-semibold text-foreground">{item.quantity}x</p>
+                        <p className="text-sm text-muted-foreground">R$ {item.totalPrice.toFixed(2).replace(".", ",")}</p>
                       </div>
                     </div>
                   ))}
@@ -208,91 +162,54 @@ const Acompanhar = () => {
               </div>
             </div>
 
-            {/* Summary */}
             <div className="lg:col-span-1">
               <div className="bg-card rounded-xl border border-border p-6 sticky top-24">
-                <h2 className="text-lg font-semibold text-foreground mb-4">
-                  Detalhes do Pedido
-                </h2>
-
+                <h2 className="text-lg font-semibold text-foreground mb-4">Detalhes do Pedido</h2>
                 <div className="space-y-4">
                   <div className="flex items-start gap-3">
                     <MapPin className="w-5 h-5 text-muted-foreground mt-0.5" />
                     <div>
                       <p className="text-sm font-medium text-foreground">
-                        {order.deliveryType === "delivery"
-                          ? "Entregar em"
-                          : "Retirar em"}
+                        {order.delivery_type === "delivery" ? "Entregar em" : "Retirar em"}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {order.deliveryType === "delivery"
-                          ? order.address
-                          : BUSINESS_INFO.address}
+                        {order.delivery_type === "delivery" ? order.customer_address : BUSINESS_INFO.address}
                       </p>
                     </div>
                   </div>
-
                   <div className="flex items-start gap-3">
                     <Phone className="w-5 h-5 text-muted-foreground mt-0.5" />
                     <div>
                       <p className="text-sm font-medium text-foreground">Telefone</p>
-                      <p className="text-sm text-muted-foreground">
-                        {order.customerPhone}
-                      </p>
+                      <p className="text-sm text-muted-foreground">{order.customer_phone}</p>
                     </div>
                   </div>
-
                   <div className="flex items-start gap-3">
                     <CreditCard className="w-5 h-5 text-muted-foreground mt-0.5" />
                     <div>
                       <p className="text-sm font-medium text-foreground">Pagamento</p>
-                      <p className="text-sm text-muted-foreground">
-                        {order.paymentMethod}
-                      </p>
+                      <p className="text-sm text-muted-foreground">{order.payment_method}</p>
                     </div>
                   </div>
-
                   <div className="flex items-start gap-3">
                     <Clock className="w-5 h-5 text-muted-foreground mt-0.5" />
                     <div>
                       <p className="text-sm font-medium text-foreground">Previsão</p>
-                      <p className="text-sm text-muted-foreground">
-                        {order.estimatedTime}
-                      </p>
+                      <p className="text-sm text-muted-foreground">{order.estimated_time}</p>
                     </div>
                   </div>
                 </div>
-
                 <div className="mt-6 pt-4 border-t border-border">
                   <div className="flex justify-between">
                     <span className="font-semibold text-foreground">Total</span>
-                    <span className="font-bold text-xl text-primary">
-                      R$ {order.total.toFixed(2).replace(".", ",")}
-                    </span>
+                    <span className="font-bold text-xl text-primary">R$ {Number(order.total).toFixed(2).replace(".", ",")}</span>
                   </div>
-                </div>
-
-                <div className="mt-6 p-4 bg-muted/50 rounded-lg">
-                  <p className="text-sm text-muted-foreground text-center">
-                    Dúvidas? Entre em contato pelo WhatsApp
-                  </p>
-                  <a
-                    href={`https://wa.me/55${BUSINESS_INFO.phone.replace(/\D/g, "")}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button variant="outline" className="w-full mt-2">
-                      <Phone className="w-4 h-4 mr-2" />
-                      {BUSINESS_INFO.phone}
-                    </Button>
-                  </a>
                 </div>
               </div>
             </div>
           </div>
         </div>
       </main>
-
       <Footer />
     </div>
   );

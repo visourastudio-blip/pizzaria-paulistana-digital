@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   MapPin,
@@ -13,7 +13,6 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { useCart } from "@/contexts/CartContext";
 import { useOrders } from "@/contexts/OrderContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -34,20 +33,37 @@ const paymentMethods: { id: PaymentMethod; label: string; icon: React.ReactNode 
 const Checkout = () => {
   const navigate = useNavigate();
   const { items, total, clearCart } = useCart();
-  const { addOrder, setCurrentCustomerPhone } = useOrders();
-  const { user, isAuthenticated, loginCustomer } = useAuth();
+  const { addOrder } = useOrders();
+  const { user, profile, isAuthenticated, isLoading } = useAuth();
 
   const [deliveryType, setDeliveryType] = useState<DeliveryType>("delivery");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pix");
-  const [name, setName] = useState(user?.name || "");
-  const [phone, setPhone] = useState(user?.phone || "");
-  const [email, setEmail] = useState(user?.email || "");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
   const [addressNumber, setAddressNumber] = useState("");
   const [complement, setComplement] = useState("");
   const [neighborhood, setNeighborhood] = useState("");
   const [change, setChange] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      toast.error("Faça login para finalizar o pedido");
+      navigate("/login-cliente");
+    }
+  }, [isAuthenticated, isLoading, navigate]);
+
+  useEffect(() => {
+    if (profile) {
+      setName(profile.name || "");
+      setPhone(profile.phone || "");
+    }
+    if (user) {
+      setEmail(user.email || "");
+    }
+  }, [profile, user]);
 
   const deliveryFee = deliveryType === "delivery" ? BUSINESS_INFO.deliveryFee : 0;
   const grandTotal = total + deliveryFee;
@@ -67,17 +83,12 @@ const Checkout = () => {
 
     setIsSubmitting(true);
 
-    // Login customer if not authenticated
-    if (!isAuthenticated) {
-      loginCustomer(name, email, phone);
-    }
-
     const fullAddress =
       deliveryType === "delivery"
         ? `${address}, ${addressNumber}${complement ? ` - ${complement}` : ""}, ${neighborhood}`
         : undefined;
 
-    const order = addOrder({
+    const order = await addOrder({
       items,
       total: grandTotal,
       customerName: name,
@@ -87,15 +98,26 @@ const Checkout = () => {
       paymentMethod: paymentMethods.find((m) => m.id === paymentMethod)?.label || paymentMethod,
     });
 
-    setCurrentCustomerPhone(phone);
-    clearCart();
+    if (order) {
+      clearCart();
+      toast.success("Pedido realizado com sucesso!", {
+        description: `Código do pedido: #${order.id.slice(0, 8)}`,
+      });
+      navigate(`/acompanhar/${order.id}`);
+    } else {
+      toast.error("Erro ao criar pedido. Tente novamente.");
+    }
 
-    toast.success("Pedido realizado com sucesso!", {
-      description: `Código do pedido: ${order.id}`,
-    });
-
-    navigate(`/acompanhar/${order.id}`);
+    setIsSubmitting(false);
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   if (items.length === 0) {
     navigate("/carrinho");
@@ -150,6 +172,7 @@ const Checkout = () => {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="seu@email.com"
+                      disabled
                     />
                   </div>
                 </div>

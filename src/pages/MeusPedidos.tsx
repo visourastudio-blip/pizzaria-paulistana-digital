@@ -3,68 +3,45 @@ import { useNavigate } from "react-router-dom";
 import {
   Clock,
   MapPin,
-  Phone,
   CreditCard,
   ChefHat,
   Package,
   Truck,
   Check,
-  RefreshCw,
 } from "lucide-react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
-import { useOrders } from "@/contexts/OrderContext";
-import { Order, OrderStatus } from "@/data/menu";
+import { useOrders, Order, OrderStatus } from "@/contexts/OrderContext";
 
-const statusConfig: Record<
-  OrderStatus,
-  { label: string; icon: React.ReactNode; variant: string; color: string }
-> = {
-  pending: {
-    label: "Aguardando",
-    icon: <Clock className="w-4 h-4" />,
-    variant: "outline",
-    color: "text-muted-foreground",
-  },
-  preparing: {
-    label: "Em Preparo",
-    icon: <ChefHat className="w-4 h-4" />,
-    variant: "preparing",
-    color: "text-warning",
-  },
-  ready: {
-    label: "Pronto",
-    icon: <Package className="w-4 h-4" />,
-    variant: "ready",
-    color: "text-info",
-  },
-  delivery: {
-    label: "Saiu para Entrega",
-    icon: <Truck className="w-4 h-4" />,
-    variant: "delivery",
-    color: "text-success",
-  },
-  completed: {
-    label: "Entregue",
-    icon: <Check className="w-4 h-4" />,
-    variant: "success",
-    color: "text-success",
-  },
+const statusConfig: Record<string, { label: string; icon: React.ReactNode; variant: string; color: string }> = {
+  pending: { label: "Aguardando", icon: <Clock className="w-4 h-4" />, variant: "outline", color: "text-muted-foreground" },
+  preparing: { label: "Em Preparo", icon: <ChefHat className="w-4 h-4" />, variant: "preparing", color: "text-warning" },
+  ready: { label: "Pronto", icon: <Package className="w-4 h-4" />, variant: "ready", color: "text-info" },
+  delivered: { label: "Entregue", icon: <Check className="w-4 h-4" />, variant: "success", color: "text-success" },
+  cancelled: { label: "Cancelado", icon: <Clock className="w-4 h-4" />, variant: "destructive", color: "text-destructive" },
 };
 
 const MeusPedidos = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, userType } = useAuth();
+  const { isAuthenticated, userType, isLoading } = useAuth();
   const { customerOrders } = useOrders();
 
   useEffect(() => {
-    if (!isAuthenticated || userType !== "customer") {
+    if (!isLoading && (!isAuthenticated || userType !== "customer")) {
       navigate("/login-cliente");
     }
-  }, [isAuthenticated, userType, navigate]);
+  }, [isAuthenticated, userType, isLoading, navigate]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated || userType !== "customer") {
     return null;
@@ -117,14 +94,16 @@ function OrderCard({ order }: { order: Order }) {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
         <div>
           <div className="flex items-center gap-3 mb-2">
-            <h3 className="font-bold text-lg text-foreground">{order.id}</h3>
+            <h3 className="font-bold text-lg text-foreground">
+              #{order.id.slice(0, 8)}
+            </h3>
             <Badge variant={status.variant as any} className="gap-1">
               {status.icon}
               {status.label}
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            {new Date(order.createdAt).toLocaleDateString("pt-BR", {
+            {new Date(order.created_at).toLocaleDateString("pt-BR", {
               day: "2-digit",
               month: "long",
               year: "numeric",
@@ -136,7 +115,7 @@ function OrderCard({ order }: { order: Order }) {
 
         <div className="flex items-center gap-3">
           <p className="text-xl font-bold text-primary">
-            R$ {order.total.toFixed(2).replace(".", ",")}
+            R$ {Number(order.total).toFixed(2).replace(".", ",")}
           </p>
           <Button
             variant="outline"
@@ -150,10 +129,10 @@ function OrderCard({ order }: { order: Order }) {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
         <div className="flex items-center gap-2 text-muted-foreground">
-          {order.deliveryType === "delivery" ? (
+          {order.delivery_type === "delivery" ? (
             <>
               <MapPin className="w-4 h-4" />
-              <span className="truncate">{order.address}</span>
+              <span className="truncate">{order.customer_address}</span>
             </>
           ) : (
             <>
@@ -164,11 +143,11 @@ function OrderCard({ order }: { order: Order }) {
         </div>
         <div className="flex items-center gap-2 text-muted-foreground">
           <CreditCard className="w-4 h-4" />
-          <span>{order.paymentMethod}</span>
+          <span>{order.payment_method}</span>
         </div>
         <div className="flex items-center gap-2 text-muted-foreground">
           <Clock className="w-4 h-4" />
-          <span>Previsão: {order.estimatedTime}</span>
+          <span>Previsão: {order.estimated_time}</span>
         </div>
       </div>
 
@@ -182,8 +161,8 @@ function OrderCard({ order }: { order: Order }) {
             >
               {item.quantity}x{" "}
               {item.flavors
-                ? item.flavors.map((f) => f.name).join(" / ")
-                : item.menuItem.name}
+                ? item.flavors.map((f: any) => f.name).join(" / ")
+                : item.menuItem?.name || "Item"}
             </span>
           ))}
         </div>
