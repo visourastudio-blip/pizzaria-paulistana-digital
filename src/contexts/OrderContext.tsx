@@ -1,93 +1,240 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
-import { Order, OrderStatus, CartItem, Feedback } from "@/data/menu";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "./AuthContext";
+import { CartItem } from "@/data/menu";
+
+export type OrderStatus = "pending" | "preparing" | "ready" | "delivered" | "cancelled";
+
+// Map database status to display status
+const statusDisplayMap: Record<string, OrderStatus> = {
+  pending: "pending",
+  preparing: "preparing", 
+  ready: "ready",
+  delivery: "delivered",
+  delivered: "delivered",
+  completed: "delivered",
+  cancelled: "cancelled",
+};
+
+export interface Order {
+  id: string;
+  user_id: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_address: string | null;
+  items: CartItem[];
+  total: number;
+  payment_method: string;
+  delivery_type: string;
+  status: OrderStatus;
+  estimated_time: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Feedback {
+  id: string;
+  user_id: string | null;
+  customer_name: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+}
 
 interface OrderContextType {
   orders: Order[];
   customerOrders: Order[];
   feedbacks: Feedback[];
-  addOrder: (order: Omit<Order, "id" | "createdAt" | "status">) => Order;
-  updateOrderStatus: (orderId: string, status: OrderStatus) => void;
+  isLoading: boolean;
+  addOrder: (order: {
+    items: CartItem[];
+    total: number;
+    customerName: string;
+    customerPhone: string;
+    deliveryType: string;
+    address?: string;
+    paymentMethod: string;
+  }) => Promise<Order | null>;
+  updateOrderStatus: (orderId: string, status: OrderStatus) => Promise<void>;
   getOrderById: (orderId: string) => Order | undefined;
-  addFeedback: (feedback: Omit<Feedback, "id" | "createdAt">) => void;
-  currentCustomerPhone: string | null;
-  setCurrentCustomerPhone: (phone: string | null) => void;
+  addFeedback: (feedback: { customerName: string; rating: number; comment: string }) => Promise<void>;
+  fetchOrders: () => Promise<void>;
+  fetchFeedbacks: () => Promise<void>;
 }
 
 const OrderContext = createContext<OrderContextType | undefined>(undefined);
 
-// Mock initial feedbacks
-const INITIAL_FEEDBACKS: Feedback[] = [
-  {
-    id: "1",
-    customerName: "Maria S.",
-    rating: 5,
-    comment: "Melhor pizza de São Paulo! A massa é perfeita e o atendimento é excelente.",
-    createdAt: new Date("2024-12-01"),
-  },
-  {
-    id: "2",
-    customerName: "João P.",
-    rating: 5,
-    comment: "Calabresa Premium é sensacional! Entrega super rápida.",
-    createdAt: new Date("2024-12-05"),
-  },
-  {
-    id: "3",
-    customerName: "Ana L.",
-    rating: 4,
-    comment: "Pizza deliciosa, só demorou um pouquinho mais que o esperado.",
-    createdAt: new Date("2024-12-08"),
-  },
-  {
-    id: "4",
-    customerName: "Carlos M.",
-    rating: 5,
-    comment: "Quatro Queijos maravilhosa! Virei cliente fiel.",
-    createdAt: new Date("2024-12-09"),
-  },
-];
-
 export function OrderProvider({ children }: { children: React.ReactNode }) {
+  const { user, userType } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
-  const [feedbacks, setFeedbacks] = useState<Feedback[]>(INITIAL_FEEDBACKS);
-  const [currentCustomerPhone, setCurrentCustomerPhone] = useState<string | null>(null);
+  const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const addOrder = useCallback((orderData: Omit<Order, "id" | "createdAt" | "status">) => {
-    const newOrder: Order = {
-      ...orderData,
-      id: `PED-${Date.now().toString(36).toUpperCase()}`,
-      createdAt: new Date(),
-      status: "pending",
-      estimatedTime: "30-45 min",
-    };
-    setOrders((prev) => [newOrder, ...prev]);
-    return newOrder;
+  const fetchOrders = useCallback(async () => {
+    if (!user) return;
+    
+    setIsLoading(true);
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .order("created_at", { ascending: false });
+    
+    if (!error && data) {
+      const mappedOrders: Order[] = data.map(order => ({
+        ...order,
+        items: order.items as unknown as CartItem[],
+        status: order.status as OrderStatus,
+      }));
+      setOrders(mappedOrders);
+    }
+    setIsLoading(false);
+  }, [user]);
+
+  const fetchFeedbacks = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("feedbacks")
+      .select("*")
+      .order("created_at", { ascending: false });
+    
+    if (!error && data) {
+      setFeedbacks(data);
+    }
   }, []);
 
-  const updateOrderStatus = useCallback((orderId: string, status: OrderStatus) => {
-    setOrders((prev) =>
-      prev.map((order) =>
-        order.id === orderId ? { ...order, status } : order
+  // Fetch orders and feedbacks on mount and when user changes
+  useEffect(() => {
+    if (user) {
+      fetchOrders();
+    }
+    fetchFeedbacks();
+  }, [user, fetchOrders, fetchFeedbacks]);
+
+  // Set up realtime subscription for orders
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel("orders-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "orders",
+        },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            const newOrder = {
+              ...payload.new,
+              items: payload.new.items as unknown as CartItem[],
+              status: payload.new.status as OrderStatus,
+            } as Order;
+            setOrders((prev) => [newOrder, ...prev]);
+          } else if (payload.eventType === "UPDATE") {
+            const updatedOrder = {
+              ...payload.new,
+              items: payload.new.items as unknown as CartItem[],
+              status: payload.new.status as OrderStatus,
+            } as Order;
+            setOrders((prev) =>
+              prev.map((order) =>
+                order.id === updatedOrder.id ? updatedOrder : order
+              )
+            );
+          } else if (payload.eventType === "DELETE") {
+            setOrders((prev) =>
+              prev.filter((order) => order.id !== payload.old.id)
+            );
+          }
+        }
       )
-    );
-  }, []);
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  const addOrder = useCallback(
+    async (orderData: {
+      items: CartItem[];
+      total: number;
+      customerName: string;
+      customerPhone: string;
+      deliveryType: string;
+      address?: string;
+      paymentMethod: string;
+    }) => {
+      if (!user) return null;
+
+      const { data, error } = await supabase
+        .from("orders")
+        .insert({
+          user_id: user.id,
+          customer_name: orderData.customerName,
+          customer_phone: orderData.customerPhone,
+          customer_address: orderData.address || null,
+          items: orderData.items as any,
+          total: orderData.total,
+          payment_method: orderData.paymentMethod,
+          delivery_type: orderData.deliveryType,
+          status: "pending",
+          estimated_time: "30-45 min",
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error creating order:", error);
+        return null;
+      }
+
+      return {
+        ...data,
+        items: data.items as unknown as CartItem[],
+        status: data.status as OrderStatus,
+      } as Order;
+    },
+    [user]
+  );
+
+  const updateOrderStatus = useCallback(
+    async (orderId: string, status: OrderStatus) => {
+      const { error } = await supabase
+        .from("orders")
+        .update({ status })
+        .eq("id", orderId);
+
+      if (error) {
+        console.error("Error updating order status:", error);
+      }
+    },
+    []
+  );
 
   const getOrderById = useCallback(
     (orderId: string) => orders.find((order) => order.id === orderId),
     [orders]
   );
 
-  const addFeedback = useCallback((feedbackData: Omit<Feedback, "id" | "createdAt">) => {
-    const newFeedback: Feedback = {
-      ...feedbackData,
-      id: Date.now().toString(),
-      createdAt: new Date(),
-    };
-    setFeedbacks((prev) => [newFeedback, ...prev]);
-  }, []);
+  const addFeedback = useCallback(
+    async (feedbackData: { customerName: string; rating: number; comment: string }) => {
+      const { error } = await supabase.from("feedbacks").insert({
+        user_id: user?.id || null,
+        customer_name: feedbackData.customerName,
+        rating: feedbackData.rating,
+        comment: feedbackData.comment,
+      });
 
-  const customerOrders = currentCustomerPhone
-    ? orders.filter((order) => order.customerPhone === currentCustomerPhone)
+      if (!error) {
+        fetchFeedbacks();
+      }
+    },
+    [user, fetchFeedbacks]
+  );
+
+  const customerOrders = user
+    ? orders.filter((order) => order.user_id === user.id)
     : [];
 
   return (
@@ -96,12 +243,13 @@ export function OrderProvider({ children }: { children: React.ReactNode }) {
         orders,
         customerOrders,
         feedbacks,
+        isLoading,
         addOrder,
         updateOrderStatus,
         getOrderById,
         addFeedback,
-        currentCustomerPhone,
-        setCurrentCustomerPhone,
+        fetchOrders,
+        fetchFeedbacks,
       }}
     >
       {children}

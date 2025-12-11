@@ -8,7 +8,6 @@ import {
   Clock,
   LogOut,
   Pizza,
-  RefreshCw,
   Phone,
   MapPin,
   Star,
@@ -16,63 +15,45 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
-import { useOrders } from "@/contexts/OrderContext";
-import { Order, OrderStatus, BUSINESS_INFO } from "@/data/menu";
+import { useOrders, Order, OrderStatus } from "@/contexts/OrderContext";
 import { toast } from "sonner";
 
-const statusConfig: Record<
-  OrderStatus,
-  { label: string; icon: React.ReactNode; variant: string; nextStatus?: OrderStatus; nextLabel?: string }
-> = {
-  pending: {
-    label: "Aguardando",
-    icon: <Clock className="w-4 h-4" />,
-    variant: "outline",
-    nextStatus: "preparing",
-    nextLabel: "Iniciar Preparo",
-  },
-  preparing: {
-    label: "Em Preparo",
-    icon: <ChefHat className="w-4 h-4" />,
-    variant: "preparing",
-    nextStatus: "ready",
-    nextLabel: "Marcar como Pronto",
-  },
-  ready: {
-    label: "Pronto",
-    icon: <Package className="w-4 h-4" />,
-    variant: "ready",
-    nextStatus: "delivery",
-    nextLabel: "Saiu para Entrega",
-  },
-  delivery: {
-    label: "Em Entrega",
-    icon: <Truck className="w-4 h-4" />,
-    variant: "delivery",
-    nextStatus: "completed",
-    nextLabel: "Confirmar Entrega",
-  },
-  completed: {
-    label: "Entregue",
-    icon: <Check className="w-4 h-4" />,
-    variant: "success",
-  },
+const statusConfig: Record<string, { label: string; icon: React.ReactNode; variant: string; nextStatus?: OrderStatus; nextLabel?: string }> = {
+  pending: { label: "Aguardando", icon: <Clock className="w-4 h-4" />, variant: "outline", nextStatus: "preparing", nextLabel: "Iniciar Preparo" },
+  preparing: { label: "Em Preparo", icon: <ChefHat className="w-4 h-4" />, variant: "preparing", nextStatus: "ready", nextLabel: "Marcar como Pronto" },
+  ready: { label: "Pronto", icon: <Package className="w-4 h-4" />, variant: "ready", nextStatus: "delivered", nextLabel: "Saiu para Entrega" },
+  delivered: { label: "Entregue", icon: <Check className="w-4 h-4" />, variant: "success" },
+  cancelled: { label: "Cancelado", icon: <Clock className="w-4 h-4" />, variant: "destructive" },
 };
 
 type FilterStatus = "all" | OrderStatus;
 
 const PainelFuncionario = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, userType, user, logout } = useAuth();
-  const { orders, updateOrderStatus, feedbacks } = useOrders();
+  const { isAuthenticated, userType, profile, signOut, isLoading } = useAuth();
+  const { orders, updateOrderStatus, feedbacks, fetchOrders } = useOrders();
   const [filter, setFilter] = useState<FilterStatus>("all");
   const [activeTab, setActiveTab] = useState<"orders" | "feedbacks">("orders");
 
   useEffect(() => {
-    if (!isAuthenticated || userType !== "employee") {
+    if (!isLoading && (!isAuthenticated || userType !== "employee")) {
       navigate("/login-funcionario");
     }
-  }, [isAuthenticated, userType, navigate]);
+  }, [isAuthenticated, userType, isLoading, navigate]);
+
+  useEffect(() => {
+    if (isAuthenticated && userType === "employee") {
+      fetchOrders();
+    }
+  }, [isAuthenticated, userType, fetchOrders]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated || userType !== "employee") {
     return null;
@@ -85,15 +66,15 @@ const PainelFuncionario = () => {
   const preparingCount = orders.filter((o) => o.status === "preparing").length;
   const readyCount = orders.filter((o) => o.status === "ready").length;
 
-  const handleStatusUpdate = (orderId: string, newStatus: OrderStatus) => {
-    updateOrderStatus(orderId, newStatus);
+  const handleStatusUpdate = async (orderId: string, newStatus: OrderStatus) => {
+    await updateOrderStatus(orderId, newStatus);
     toast.success("Status atualizado!", {
-      description: `Pedido ${orderId} - ${statusConfig[newStatus].label}`,
+      description: `Pedido atualizado - ${statusConfig[newStatus].label}`,
     });
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await signOut();
     navigate("/");
   };
 
@@ -110,7 +91,7 @@ const PainelFuncionario = () => {
             </Link>
             <div>
               <h1 className="font-bold text-foreground">Painel do Funcionário</h1>
-              <p className="text-xs text-muted-foreground">{user?.name}</p>
+              <p className="text-xs text-muted-foreground">{profile?.name}</p>
             </div>
           </div>
 
@@ -233,13 +214,13 @@ const PainelFuncionario = () => {
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
                       <span className="font-semibold text-primary">
-                        {feedback.customerName.charAt(0)}
+                        {feedback.customer_name.charAt(0)}
                       </span>
                     </div>
                     <div>
-                      <p className="font-medium text-foreground">{feedback.customerName}</p>
+                      <p className="font-medium text-foreground">{feedback.customer_name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(feedback.createdAt).toLocaleDateString("pt-BR")}
+                        {new Date(feedback.created_at).toLocaleDateString("pt-BR")}
                       </p>
                     </div>
                   </div>
@@ -280,18 +261,20 @@ function OrderCard({
       {/* Header */}
       <div className="p-4 border-b border-border bg-muted/30">
         <div className="flex items-center justify-between mb-2">
-          <h3 className="font-bold text-lg text-foreground">{order.id}</h3>
+          <h3 className="font-bold text-lg text-foreground">
+            #{order.id.slice(0, 8)}
+          </h3>
           <Badge variant={status.variant as any} className="gap-1">
             {status.icon}
             {status.label}
           </Badge>
         </div>
         <p className="text-sm text-muted-foreground">
-          {new Date(order.createdAt).toLocaleTimeString("pt-BR", {
+          {new Date(order.created_at).toLocaleTimeString("pt-BR", {
             hour: "2-digit",
             minute: "2-digit",
           })}{" "}
-          - {order.customerName}
+          - {order.customer_name}
         </p>
       </div>
 
@@ -303,8 +286,8 @@ function OrderCard({
               <span className="font-medium text-foreground">
                 {item.quantity}x{" "}
                 {item.flavors
-                  ? item.flavors.map((f) => f.name).join(" / ")
-                  : item.menuItem.name}
+                  ? item.flavors.map((f: any) => f.name).join(" / ")
+                  : item.menuItem?.name || "Item"}
               </span>
               {item.size && (
                 <span className="text-muted-foreground ml-1">({item.size.name})</span>
@@ -320,13 +303,13 @@ function OrderCard({
         <div className="space-y-2 pt-4 border-t border-border text-sm">
           <div className="flex items-center gap-2 text-muted-foreground">
             <Phone className="w-4 h-4" />
-            <span>{order.customerPhone}</span>
+            <span>{order.customer_phone}</span>
           </div>
           <div className="flex items-center gap-2 text-muted-foreground">
-            {order.deliveryType === "delivery" ? (
+            {order.delivery_type === "delivery" ? (
               <>
                 <MapPin className="w-4 h-4" />
-                <span className="truncate">{order.address}</span>
+                <span className="truncate">{order.customer_address}</span>
               </>
             ) : (
               <>
@@ -336,9 +319,9 @@ function OrderCard({
             )}
           </div>
           <div className="flex items-center justify-between pt-2">
-            <span className="text-muted-foreground">{order.paymentMethod}</span>
+            <span className="text-muted-foreground">{order.payment_method}</span>
             <span className="font-bold text-primary">
-              R$ {order.total.toFixed(2).replace(".", ",")}
+              R$ {Number(order.total).toFixed(2).replace(".", ",")}
             </span>
           </div>
         </div>

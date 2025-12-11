@@ -1,37 +1,61 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Pizza, Mail, Lock, ArrowRight, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
-import { BUSINESS_INFO } from "@/data/menu";
 import { toast } from "sonner";
 
 const LoginFuncionario = () => {
   const navigate = useNavigate();
-  const { loginEmployee } = useAuth();
+  const { signIn, isAuthenticated, userType, isLoading } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && userType === "employee") {
+      navigate("/funcionario");
+    }
+  }, [isAuthenticated, userType, isLoading, navigate]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setIsSubmitting(true);
 
     if (!email || !password) {
       setError("Preencha todos os campos");
+      setIsSubmitting(false);
       return;
     }
 
-    const success = loginEmployee(email, password);
-    if (success) {
-      toast.success("Bem-vindo(a) ao painel!");
-      navigate("/funcionario");
-    } else {
-      setError("E-mail ou senha incorretos");
+    try {
+      const { error } = await signIn(email, password);
+      if (error) {
+        setError("E-mail ou senha incorretos");
+      } else {
+        // Wait a bit for the role to be fetched
+        setTimeout(() => {
+          toast.success("Bem-vindo(a) ao painel!");
+        }, 500);
+      }
+    } catch (err) {
+      setError("Ocorreu um erro. Tente novamente.");
     }
+
+    setIsSubmitting(false);
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -116,8 +140,8 @@ const LoginFuncionario = () => {
               </div>
             </div>
 
-            <Button type="submit" variant="secondary" className="w-full" size="lg">
-              Acessar Painel
+            <Button type="submit" variant="secondary" className="w-full" size="lg" disabled={isSubmitting}>
+              {isSubmitting ? "Aguarde..." : "Acessar Painel"}
               <ArrowRight className="w-4 h-4" />
             </Button>
           </form>

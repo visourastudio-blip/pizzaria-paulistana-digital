@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { itemCount } = useCart();
-  const { user, isAuthenticated, logout, userType } = useAuth();
+  const { profile, isAuthenticated, signOut, userType } = useAuth();
   const location = useLocation();
 
   const navLinks = [
@@ -20,6 +20,10 @@ export function Header() {
   ];
 
   const isActive = (path: string) => location.pathname === path;
+
+  const handleLogout = async () => {
+    await signOut();
+  };
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-md border-b border-border">
@@ -73,10 +77,10 @@ export function Header() {
                 <Link to={userType === "employee" ? "/funcionario" : "/meus-pedidos"}>
                   <Button variant="ghost" size="sm" className="hidden sm:flex items-center gap-2">
                     <User className="w-4 h-4" />
-                    <span className="text-sm">{user?.name.split(" ")[0]}</span>
+                    <span className="text-sm">{profile?.name?.split(" ")[0] || "Usuário"}</span>
                   </Button>
                 </Link>
-                <Button variant="ghost" size="icon" onClick={logout}>
+                <Button variant="ghost" size="icon" onClick={handleLogout}>
                   <LogOut className="w-4 h-4" />
                 </Button>
               </div>

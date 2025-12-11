@@ -4,28 +4,42 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { useOrders } from "@/contexts/OrderContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 export function FeedbackSection() {
   const { feedbacks, addFeedback } = useOrders();
+  const { isAuthenticated, profile } = useAuth();
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [hoveredRating, setHoveredRating] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !comment.trim()) {
-      toast.error("Preencha todos os campos");
+    
+    if (!isAuthenticated) {
+      toast.error("Faça login para deixar uma avaliação");
       return;
     }
-    addFeedback({ customerName: name, rating, comment });
+    
+    const customerName = name.trim() || profile?.name || "Anônimo";
+    
+    if (!comment.trim()) {
+      toast.error("Escreva um comentário");
+      return;
+    }
+    
+    setIsSubmitting(true);
+    await addFeedback({ customerName, rating, comment });
     toast.success("Avaliação enviada com sucesso!");
     setName("");
     setRating(5);
     setComment("");
     setShowForm(false);
+    setIsSubmitting(false);
   };
 
   const averageRating =
@@ -58,9 +72,15 @@ export function FeedbackSection() {
             </span>
             <span className="text-muted-foreground">({feedbacks.length} avaliações)</span>
           </div>
-          <Button onClick={() => setShowForm(!showForm)} variant="outline">
-            {showForm ? "Cancelar" : "Deixar Avaliação"}
-          </Button>
+          {isAuthenticated ? (
+            <Button onClick={() => setShowForm(!showForm)} variant="outline">
+              {showForm ? "Cancelar" : "Deixar Avaliação"}
+            </Button>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Faça login para deixar uma avaliação
+            </p>
+          )}
         </div>
 
         {/* Form */}
@@ -72,12 +92,12 @@ export function FeedbackSection() {
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium text-foreground mb-2 block">
-                  Seu nome
+                  Seu nome (opcional)
                 </label>
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Maria S."
+                  placeholder={profile?.name || "Maria S."}
                 />
               </div>
 
@@ -119,8 +139,8 @@ export function FeedbackSection() {
                 />
               </div>
 
-              <Button type="submit" className="w-full">
-                Enviar Avaliação
+              <Button type="submit" className="w-full" disabled={isSubmitting}>
+                {isSubmitting ? "Enviando..." : "Enviar Avaliação"}
               </Button>
             </div>
           </form>
@@ -138,13 +158,13 @@ export function FeedbackSection() {
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
                     <span className="font-semibold text-primary">
-                      {feedback.customerName.charAt(0)}
+                      {feedback.customer_name.charAt(0)}
                     </span>
                   </div>
                   <div>
-                    <p className="font-medium text-foreground">{feedback.customerName}</p>
+                    <p className="font-medium text-foreground">{feedback.customer_name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(feedback.createdAt).toLocaleDateString("pt-BR")}
+                      {new Date(feedback.created_at).toLocaleDateString("pt-BR")}
                     </p>
                   </div>
                 </div>
